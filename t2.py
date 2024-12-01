@@ -1,16 +1,21 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 import requests
 import time
+import os
 
 app = FastAPI()
 
-# ORCID API Credentials
 CLIENT_ID = "APP-B3RA9A9LZG7HU5RR"
 CLIENT_SECRET = "16c435f3-c7af-40f1-ad24-cdb0755763cc"
 TOKEN_URL = "https://orcid.org/oauth/token"
+AUTHORIZE_URL = "https://orcid.org/oauth/authorize"
 SEARCH_URL = "https://pub.orcid.org/v3.0/search"
 
-# Global token storage (for simplicity; consider a better caching mechanism for production)
+# Redirect URI
+REDIRECT_URI = os.getenv("REDIRECT_URI", "https://t1-wced.onrender.com/callback")  # Use environment variable or default
+
+# Global token storage
 token_data = {
     "access_token": None,
     "expires_at": None,
@@ -48,10 +53,49 @@ def get_access_token():
         raise HTTPException(status_code=500, detail=f"Failed to obtain access token: {str(e)}")
 
 
+@app.get("/authorize")
+def authorize():
+    """
+    Step 1: Redirect user to ORCID for authorization.
+    """
+    auth_url = (
+        f"{AUTHORIZE_URL}"
+        f"?client_id={CLIENT_ID}"
+        f"&response_type=code"
+        f"&redirect_uri={REDIRECT_URI}"
+        f"&scope=/authenticate"
+    )
+    return RedirectResponse(auth_url)
+
+
+@app.get("/callback")
+def callback(code: str):
+    """
+    Step 2: Handle the redirect from ORCID with the authorization code.
+    Exchange the code for an access token.
+    """
+    data = {
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": REDIRECT_URI,  # Must match exactly what is registered in ORCID
+    }
+    headers = {"Accept": "application/json"}
+
+    try:
+        response = requests.post(TOKEN_URL, data=data, headers=headers)
+        response.raise_for_status()
+        token_response = response.json()
+        return {"access_token": token_response.get("access_token"), "expires_in": token_response.get("expires_in")}
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Failed to exchange code for token: {str(e)}")
+
+
 @app.get("/search")
 def search_author(author_name: str = Query(..., description="Name of the author to search for")):
     """
-    Search for an author's ORCID profile by name.
+    Step 3: Search for an author's ORCID profile by name.
     """
     access_token = get_access_token()
 
