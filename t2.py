@@ -41,3 +41,9 @@ def auth_callback(request: Request):
         return {"access_token": token_data["access_token"], "token_type": token_data["token_type"]}
     else:
         return {"error": "Failed to exchange code for token", "status_code": response.status_code}
+if __name__ == "__main__":
+    import uvicorn
+
+    # Get the PORT from the environment or default to 8000
+    port = 8000
+    uvicorn.run(app, host="0.0.0.0", port=port)
